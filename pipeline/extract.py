@@ -60,9 +60,10 @@ Extract the fields and return ONLY a single JSON object with exactly these keys:
   "mer": <float or null>,
   "management_fee": <float or null>,
   "aum_millions": <float or null>,
+  "price": <float or null>,
   "holdings": [
     {{
-      "holding_ticker": <string>,
+      "holding_ticker": <string or null>,
       "holding_name": <string>,
       "weight_pct": <float>,
       "asset_type": <"Equity"|"Bond"|"ETF"|"Cash"|"Other">,
@@ -75,6 +76,7 @@ Rules:
 - Convert ALL percentages to decimals: 1.23% -> 0.0123, 0.09% -> 0.0009
 - AUM in MILLIONS of native currency: $1.4B -> 1400.0, $560M -> 560.0, $1.4T -> 1400000.0
 - Holdings weight_pct must be decimal: 7.1% -> 0.071
+- price is the current market price per share/unit in native currency (e.g. 123.45)
 - Return null for any field not found - never guess or invent data
 - Return up to 10 holdings ordered by weight descending
 - Return empty list [] for holdings if no holdings table found

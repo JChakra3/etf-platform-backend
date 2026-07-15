@@ -25,10 +25,10 @@ _SUMMARY_COLS = """
     e.etf_category, e.asset_class, e.strategy_type, e.sector_focus,
     e.geographic_exposure, e.is_covered_call, e.is_leveraged,
     e.is_inverse, e.is_hedged, e.distribution_yield, e.dividend_frequency,
-    e.growth_or_income, e.mer, e.aum_cad, e.risk_score
+    e.growth_or_income, e.mer, e.aum_cad, e.price, e.exchange, e.risk_score
 """
 
-_VALID_SORT = {"aum_cad", "mer", "distribution_yield", "risk_score", "name"}
+_VALID_SORT = {"aum_cad", "mer", "distribution_yield", "risk_score", "name", "price"}
 
 
 def _bools(row: dict) -> dict:
@@ -68,6 +68,9 @@ async def search_etfs(
     mer_max: Optional[float] = Query(None, ge=0),
     yield_min: Optional[float] = Query(None, ge=0),
     aum_min_cad: Optional[float] = Query(None, ge=0),
+    exchange: Optional[str] = Query(None),
+    price_min: Optional[float] = Query(None, ge=0),
+    price_max: Optional[float] = Query(None, ge=0),
     sort: str = Query("aum_cad"),
     order: str = Query("desc"),
     page: int = Query(1, ge=1),
@@ -117,6 +120,12 @@ async def search_etfs(
         where.append("e.distribution_yield >= ?"); params.append(yield_min)
     if aum_min_cad is not None:
         where.append("e.aum_cad >= ?"); params.append(aum_min_cad)
+    if exchange:
+        where.append("e.exchange = ?"); params.append(exchange)
+    if price_min is not None:
+        where.append("e.price >= ?"); params.append(price_min)
+    if price_max is not None:
+        where.append("e.price <= ?"); params.append(price_max)
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     safe_sort  = sort  if sort  in _VALID_SORT   else "aum_cad"

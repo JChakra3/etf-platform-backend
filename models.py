@@ -23,7 +23,9 @@ class ETFSummary(BaseModel):
     growth_or_income: Optional[str] = None
     mer: Optional[float] = None
     aum_cad: Optional[float] = None
+    price: Optional[float] = None
     risk_score: Optional[int] = None
+    exchange: Optional[str] = None
 
 
 class ETFHolding(BaseModel):
@@ -36,7 +38,7 @@ class ETFHolding(BaseModel):
 
 
 class ETFDetail(ETFSummary):
-    exchange: str
+    exchange: Optional[str] = None
     inception_date: Optional[str] = None
     management_fee: Optional[float] = None
     is_esg: bool = False

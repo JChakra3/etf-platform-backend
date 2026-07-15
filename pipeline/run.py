@@ -1,14 +1,15 @@
 """
 Main pipeline entry point.
 Run manually:          python -m pipeline.run
-Run via Render Cron:   python -m pipeline.run
+Run via GitHub Actions: python -m pipeline.run
 
-Loops all 19 ETFs, scrapes each one, validates with Pydantic,
-then upserts MER / yield / AUM / holdings into Turso.
+1. Calls Yahoo Finance screener to discover all ETFs with AUM > $10M
+2. Inserts any new ETFs not already in the database
+3. Scrapes each ETF's Yahoo Finance page with Gemini for MER/yield/AUM/price/holdings
+4. Upserts results into Turso
 """
 import asyncio
 import os
-import sys
 import time
 from datetime import datetime, UTC
 
@@ -16,14 +17,11 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-from pipeline.sources import ETF_SOURCES
+from pipeline.screener import get_all_etfs
 from pipeline.extract import scrape_etf
 
-# Lazy import db so .env is loaded first
-import importlib
 db = None
 
-# USD → CAD conversion rate (update monthly or pull from an FX API later)
 USD_TO_CAD = 1.36
 
 
@@ -35,31 +33,84 @@ def _aum_to_cad_millions(aum_millions: float | None, currency: str) -> float | N
     return round(aum_millions, 2)
 
 
+def _ticker_to_yahoo_url(ticker: str) -> str:
+    return f"https://finance.yahoo.com/quote/{ticker}/"
+
+
+async def _ensure_etf_exists(ticker: str, info: dict) -> None:
+    """Insert ETF into DB if it doesn't exist yet."""
+    existing = await db.fetch_one(
+        "SELECT id FROM etfs WHERE ticker = ? COLLATE NOCASE", [ticker]
+    )
+    if existing:
+        return
+
+    currency = info.get("currency") or ("CAD" if info.get("country") == "CA" else "USD")
+    country  = info.get("country", "US")
+    name     = info.get("name") or ticker
+    exchange = info.get("exchange") or ""
+    price    = info.get("price")
+    volume   = info.get("volume")
+    now      = datetime.now(UTC).isoformat()
+
+    await db.run(
+        """
+        INSERT OR IGNORE INTO etfs (
+            ticker, name, provider, exchange, country, currency,
+            etf_category, asset_class, strategy_type, geographic_exposure,
+            price, volume, last_scraped_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            ticker, name, "Unknown", exchange, country, currency,
+            "Unknown", "Unknown", "Unknown", "Unknown",
+            price, volume, now, now, now,
+        ],
+    )
+    print(f"    => NEW ETF inserted: {ticker} ({name})")
+
+
 async def run_pipeline():
     global db
     import db as _db
     db = _db
 
-    now = datetime.now(UTC).isoformat()
+    now   = datetime.now(UTC).isoformat()
     as_of = datetime.now(UTC).strftime("%Y-%m-%d")
 
-    tickers = list(ETF_SOURCES.keys())
+    print(f"\n{'='*60}")
+    print(f"  ETF Scrape Pipeline  —  {now[:19]}Z")
+    print(f"{'='*60}\n")
+
+    # ── Step 1: Discover ETFs from screener ──────────────────────────────────
+    print("  [1/3] Running Yahoo Finance screener...\n")
+    screener_etfs = get_all_etfs()
+
+    if not screener_etfs:
+        print("  [WARN] Screener returned 0 results — using existing DB tickers")
+        rows = await db.fetch_all("SELECT ticker, currency FROM etfs", [])
+        screener_etfs = [{"ticker": r["ticker"], "currency": r["currency"]} for r in rows]
+
+    # ── Step 2: Insert new ETFs ───────────────────────────────────────────────
+    print(f"\n  [2/3] Syncing {len(screener_etfs)} ETFs to database...\n")
+    for info in screener_etfs:
+        await _ensure_etf_exists(info["ticker"], info)
+
+    # ── Step 3: Scrape each ETF with Gemini ──────────────────────────────────
+    ticker_meta = {e["ticker"]: e for e in screener_etfs}
+    all_tickers = list(ticker_meta.keys())
+
+    print(f"\n  [3/3] Scraping {len(all_tickers)} ETFs with Gemini...\n")
     ok = 0
     skipped = 0
 
-    print(f"\n{'='*55}")
-    print(f"  ETF Scrape Pipeline  —  {now[:19]}Z")
-    print(f"  ETFs to process: {len(tickers)}")
-    print(f"{'='*55}\n")
-
-    for ticker in tickers:
-        source = ETF_SOURCES[ticker]
-        url = source["url"]
-        aum_currency = source["aum_currency"]
+    for ticker in all_tickers:
+        meta     = ticker_meta[ticker]
+        currency = meta.get("currency") or "USD"
+        url      = _ticker_to_yahoo_url(ticker)
 
         print(f"  [{ticker}]  {url}")
 
-        # ── Fetch + extract ──────────────────────────────────────────────────
         result = scrape_etf(ticker, url)
 
         if result is None:
@@ -68,43 +119,42 @@ async def run_pipeline():
             time.sleep(2)
             continue
 
-        # ── Convert AUM to CAD millions ──────────────────────────────────────
-        aum_cad = _aum_to_cad_millions(result.aum_millions, aum_currency)
+        aum_cad = _aum_to_cad_millions(result.aum_millions, currency)
+        price   = result.price or meta.get("price")
 
-        # ── Build update fields (only non-None values) ───────────────────────
         updates: list[str] = ["last_scraped_at = ?", "updated_at = ?"]
-        params: list = [now, now]
+        params: list       = [now, now]
 
         if result.mer is not None and result.mer > 0:
-            updates.append("mer = ?");            params.append(result.mer)
+            updates.append("mer = ?");                params.append(result.mer)
         if result.management_fee is not None:
-            updates.append("management_fee = ?"); params.append(result.management_fee)
+            updates.append("management_fee = ?");     params.append(result.management_fee)
         if result.distribution_yield is not None:
             updates.append("distribution_yield = ?"); params.append(result.distribution_yield)
         if aum_cad is not None:
-            updates.append("aum_cad = ?");        params.append(aum_cad)
+            updates.append("aum_cad = ?");            params.append(aum_cad)
+        if price is not None:
+            updates.append("price = ?");              params.append(price)
+        if meta.get("volume") is not None:
+            updates.append("volume = ?");             params.append(meta["volume"])
 
-        params.append(ticker)  # for WHERE clause
+        params.append(ticker)
 
         await db.run(
             f"UPDATE etfs SET {', '.join(updates)} WHERE ticker = ? COLLATE NOCASE",
             params,
         )
 
-        # ── Upsert holdings if provided ───────────────────────────────────────
         if result.holdings:
             etf_row = await db.fetch_one(
                 "SELECT id FROM etfs WHERE ticker = ? COLLATE NOCASE", [ticker]
             )
             if etf_row:
                 etf_id = etf_row["id"]
-
-                # Delete existing holdings for this ETF before reinserting
                 await db.run(
                     "DELETE FROM etf_holdings WHERE etf_id = ? AND as_of_date = ?",
                     [etf_id, as_of],
                 )
-
                 for h in result.holdings:
                     ticker_val = h.holding_ticker or h.holding_name[:10]
                     await db.run(
@@ -117,23 +167,20 @@ async def run_pipeline():
                          h.weight_pct, h.asset_type, h.country, as_of],
                     )
 
-        # ── Summary ───────────────────────────────────────────────────────────
-        print(f"    MER={result.mer}  yield={result.distribution_yield}  "
+        print(f"    price={price}  MER={result.mer}  yield={result.distribution_yield}  "
               f"AUM={aum_cad}M CAD  holdings={len(result.holdings)}")
         print(f"    => OK\n")
         ok += 1
 
-        # Respect Gemini free tier: 15 req/min → 1 request every 4 seconds
         time.sleep(4)
 
-    print(f"{'='*55}")
+    print(f"{'='*60}")
     print(f"  Done — {ok} updated, {skipped} skipped")
-    print(f"{'='*55}\n")
+    print(f"{'='*60}\n")
 
 
 async def _main():
     await run_pipeline()
-    # Close the Turso client cleanly to avoid unclosed session warnings
     if db and hasattr(db, '_client') and db._client:
         await db._client.close()
 

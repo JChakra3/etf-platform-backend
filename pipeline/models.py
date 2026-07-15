@@ -45,6 +45,10 @@ class ScrapedETF(BaseModel):
             "Return null if not found."
         ),
     )
+    price: float | None = Field(
+        default=None,
+        description="Current market price per unit/share in native currency. Return null if not found.",
+    )
     holdings: list[ScrapedHolding] = Field(
         default_factory=list,
         description=(

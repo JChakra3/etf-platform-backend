@@ -45,6 +45,8 @@ STATEMENTS = [
         mer                 REAL,
         management_fee      REAL,
         aum_cad             REAL,
+        price               REAL,
+        volume              INTEGER,
         risk_score          INTEGER,
         risk_asset_class    INTEGER,
         risk_concentration  INTEGER,
