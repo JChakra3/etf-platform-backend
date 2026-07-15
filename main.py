@@ -1,4 +1,5 @@
 import os
+import httpx
 from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
@@ -45,6 +46,30 @@ def _bools(row: dict) -> dict:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# ── FX Rate ──────────────────────────────────────────────────────────────────
+
+_fx_cache: dict = {}
+
+@app.get("/fx")
+async def get_fx():
+    """Returns live USD→CAD rate from frankfurter.app (cached per day)."""
+    import time
+    now = time.time()
+    if _fx_cache.get("ts") and now - _fx_cache["ts"] < 3600:
+        return _fx_cache["data"]
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get("https://api.frankfurter.app/latest?from=USD&to=CAD")
+            resp.raise_for_status()
+            rate = resp.json()["rates"]["CAD"]
+    except Exception:
+        rate = _fx_cache.get("data", {}).get("usd_to_cad", 1.36)
+    data = {"usd_to_cad": rate}
+    _fx_cache["data"] = data
+    _fx_cache["ts"] = now
+    return data
 
 
 # ── Search ───────────────────────────────────────────────────────────────────
