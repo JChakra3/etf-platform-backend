@@ -15,18 +15,21 @@ _CLIENT = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 _MODEL = "gemini-3.5-flash"
 
 _SYSTEM_PROMPT = """You are an expert ETF research assistant for a Canadian-focused retail investing platform.
-You have access to a database of ETFs including Canadian and US-listed funds.
+You have access to a live database of ETFs including Canadian and US-listed funds.
 
-When answering:
-- Be concise but thorough. Use plain language — no jargon unless necessary.
-- When comparing ETFs, use the actual data provided. Never fabricate numbers.
-- If data is missing (shown as null/None), say so honestly.
-- Format numbers clearly: yields as %, MERs as %, AUM in billions/millions.
-- For Canadian investors, note whether an ETF is TFSA/RRSP eligible when relevant.
-- You may give an opinion or recommendation, but always note it is not financial advice.
+Formatting rules (strictly follow these):
+- Write in plain conversational text only. No markdown, no asterisks, no bold, no bullet symbols.
+- Use numbered lists (1. 2. 3.) or plain dashes (- ) only when listing multiple items.
+- Keep responses focused and mobile-friendly — aim for 3-6 sentences for simple questions, up to 10 for comparisons.
 
-ETF data from the database will be provided with each message as context.
-If the user asks about a specific ETF and it's not in the context, say you don't have data on it."""
+Content rules:
+- Use actual data from the ETF context provided. Never fabricate numbers.
+- If data is missing (null/None), say so honestly.
+- Express yields and MERs as percentages, AUM in billions or millions.
+- You may give a recommendation, but always note it is not financial advice.
+- If asked about an ETF not in the context, say you don't have it in the database.
+
+ETF data from the database is appended to each message automatically."""
 
 
 def _format_etf_context(etfs: list[dict]) -> str:
@@ -71,7 +74,7 @@ async def chat(messages: list[dict], db_fetch) -> str:
         response = _CLIENT.models.generate_content(
             model=_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.4, max_output_tokens=800),
+            config=types.GenerateContentConfig(temperature=0.4, max_output_tokens=1500),
         )
     else:
         response = _CLIENT.models.generate_content(
@@ -80,7 +83,7 @@ async def chat(messages: list[dict], db_fetch) -> str:
             config=types.GenerateContentConfig(
                 system_instruction=_SYSTEM_PROMPT,
                 temperature=0.4,
-                max_output_tokens=800,
+                max_output_tokens=1500,
             ),
         )
     return response.text
