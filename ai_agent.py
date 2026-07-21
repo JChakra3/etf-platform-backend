@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
 _CLIENT = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-_MODEL = "gemini-2.0-flash"
+_MODEL = "gemini-3.5-flash"
 
 _SYSTEM_PROMPT = """You are an expert ETF research assistant for a Canadian-focused retail investing platform.
 You have access to a database of ETFs including Canadian and US-listed funds.
@@ -56,27 +56,26 @@ async def chat(messages: list[dict], db_fetch) -> str:
     etfs = await _fetch_relevant_etfs(recent_text, db_fetch)
     context_block = _format_etf_context(etfs)
 
-    # Build Gemini history (all but last user message)
-    history = []
+    # Build full contents list: history + augmented last message
+    contents = []
     for m in messages[:-1]:
         role = "user" if m["role"] == "user" else "model"
-        history.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
+        contents.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
 
-    # Last user message gets the DB context injected
+    # Inject DB context into the last user message
     last_content = messages[-1]["content"]
     augmented = f"{last_content}\n\n[ETF Database Context]\n{context_block}"
+    contents.append(types.Content(role="user", parts=[types.Part(text=augmented)]))
 
-    chat_session = _CLIENT.chats.create(
+    response = _CLIENT.models.generate_content(
         model=_MODEL,
+        contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=_SYSTEM_PROMPT,
             temperature=0.4,
             max_output_tokens=800,
         ),
-        history=history,
     )
-
-    response = chat_session.send_message(augmented)
     return response.text
 
 
