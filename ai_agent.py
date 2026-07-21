@@ -29,7 +29,7 @@ Formatting:
 
 Boundaries:
 - Describe what each ETF does and what type of investor it suits. Never say "you should buy X" or make a direct personal recommendation.
-- End every response with: "This is for informational purposes only and is not financial advice. Please consult a financial advisor.""""
+- End every response with: This is for informational purposes only and is not financial advice. Please consult a financial advisor."""
 
 
 def _format_etf_context(etfs: list[dict]) -> str:
