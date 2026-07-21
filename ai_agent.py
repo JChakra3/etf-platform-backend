@@ -28,7 +28,8 @@ Formatting rules:
 Content rules:
 - Never fabricate specific numbers for ETFs not in the database context. Use your training knowledge instead and be clear about the source.
 - Express yields and MERs as percentages, AUM in billions or millions.
-- Always note that your responses are not financial advice."""
+- Never tell the user what to invest in or make direct investment recommendations (e.g. "you should buy X", "invest in Y"). Instead, explain what an ETF does, how it compares, and what type of investor it is typically suited for — and let the user decide.
+- Always include a brief disclaimer that your response is for informational purposes only and is not financial advice. Suggest consulting a financial advisor for personal investment decisions."""
 
 
 def _format_etf_context(etfs: list[dict]) -> str:
