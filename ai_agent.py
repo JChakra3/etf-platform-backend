@@ -51,31 +51,38 @@ async def chat(messages: list[dict], db_fetch) -> str:
     messages: list of {role: 'user'|'assistant', content: str}
     db_fetch: async callable(sql, params) -> list[dict]
     """
-    # Extract keywords from recent messages to fetch relevant ETFs
     recent_text = " ".join(m["content"] for m in messages[-3:]).lower()
     etfs = await _fetch_relevant_etfs(recent_text, db_fetch)
     context_block = _format_etf_context(etfs)
 
-    # Build full contents list: history + augmented last message
+    # Build contents as plain dicts (same pattern as pipeline/extract.py)
     contents = []
     for m in messages[:-1]:
         role = "user" if m["role"] == "user" else "model"
-        contents.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
+        contents.append({"role": role, "parts": [{"text": m["content"]}]})
 
-    # Inject DB context into the last user message
     last_content = messages[-1]["content"]
     augmented = f"{last_content}\n\n[ETF Database Context]\n{context_block}"
-    contents.append(types.Content(role="user", parts=[types.Part(text=augmented)]))
+    contents.append({"role": "user", "parts": [{"text": augmented}]})
 
-    response = _CLIENT.models.generate_content(
-        model=_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=_SYSTEM_PROMPT,
-            temperature=0.4,
-            max_output_tokens=800,
-        ),
-    )
+    # If only one message, generate_content accepts a plain string
+    if len(contents) == 1:
+        prompt = f"{_SYSTEM_PROMPT}\n\n{augmented}"
+        response = _CLIENT.models.generate_content(
+            model=_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.4, max_output_tokens=800),
+        )
+    else:
+        response = _CLIENT.models.generate_content(
+            model=_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=_SYSTEM_PROMPT,
+                temperature=0.4,
+                max_output_tokens=800,
+            ),
+        )
     return response.text
 
 
