@@ -4,9 +4,11 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from db import fetch_all, fetch_one, run
 from models import ETFSummary, ETFDetail, ETFHolding, SearchResponse
+from ai_agent import chat as ai_chat, generate_overview
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
@@ -204,6 +206,46 @@ async def get_etf(ticker: str):
         **row,
         holdings=[ETFHolding(**h) for h in holdings],
     )
+
+
+# ── AI Chat ──────────────────────────────────────────────────────────────────
+
+class ChatMessage(BaseModel):
+    role: str  # 'user' or 'assistant'
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage]
+
+@app.post("/ai/chat")
+async def ai_chat_endpoint(body: ChatRequest):
+    if not body.messages:
+        raise HTTPException(status_code=400, detail="No messages provided")
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+    try:
+        reply = await ai_chat(messages, fetch_all)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"reply": reply}
+
+
+@app.get("/ai/overview/{ticker}")
+async def ai_overview_endpoint(ticker: str):
+    row = await fetch_one(
+        "SELECT * FROM etfs WHERE ticker = ? COLLATE NOCASE", [ticker]
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail=f"ETF '{ticker}' not found")
+
+    # Return cached overview if available
+    if row.get("ai_overview"):
+        return {"overview": row["ai_overview"]}
+
+    # Generate and cache
+    _bools(row)
+    overview = await generate_overview(row)
+    await run("UPDATE etfs SET ai_overview = ? WHERE ticker = ? COLLATE NOCASE", [overview, ticker])
+    return {"overview": overview}
 
 
 # ── Background task ───────────────────────────────────────────────────────────

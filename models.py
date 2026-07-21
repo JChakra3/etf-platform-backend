@@ -47,6 +47,7 @@ class ETFDetail(ETFSummary):
     withholding_tax_note: Optional[str] = None
     roc_note: Optional[str] = None
     ai_summary: Optional[str] = None
+    ai_overview: Optional[str] = None
     risk_asset_class: Optional[int] = None
     risk_concentration: Optional[int] = None
     risk_leverage: Optional[int] = None
