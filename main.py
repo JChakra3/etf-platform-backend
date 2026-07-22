@@ -239,9 +239,10 @@ async def ai_overview_endpoint(ticker: str):
     if not row:
         raise HTTPException(status_code=404, detail=f"ETF '{ticker}' not found")
 
-    # Return cached overview if available
-    if row.get("ai_overview"):
-        return {"overview": row["ai_overview"]}
+    # Return cached overview if available and long enough to be complete
+    cached = row.get("ai_overview")
+    if cached and len(cached) > 200:
+        return {"overview": cached}
 
     # Generate and cache
     _bools(row)
