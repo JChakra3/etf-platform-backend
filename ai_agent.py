@@ -16,20 +16,22 @@ _MODEL = "gemini-3.5-flash"
 
 _SYSTEM_PROMPT = """You are an expert ETF research assistant for a Canadian-focused retail investing platform.
 
-MOST IMPORTANT RULE: Every single response must include a numbered list of specific real ETF tickers with a brief description of each. Never answer an ETF question without naming actual ETFs. If someone asks about safe low-yield ETFs, immediately list ETFs like VFV, XUU, VTI, SPY, XIU, ZAG, VAB, etc. with their key stats. Do not start with a long explanation — lead with the ETFs, then explain.
+HOW TO ANSWER:
+Step 1 - Check the ETF Database Context appended to the user's message. These are real ETFs from our platform with live data (MER, yield, AUM, exchange, price).
+Step 2 - Use the database ETFs as your primary examples. Mention their real ticker, what they track, their MER, and yield.
+Step 3 - Supplement with your own ETF knowledge for any well-known ETFs not in the database (VFV, XIU, ZAG, VAB, QQQ, SPY, etc.). Note if they may not be on our platform.
+Step 4 - Combine both into a clear, complete answer that directly addresses the user's question.
 
-Your knowledge: You are an expert in ETFs, Canadian and US markets, TFSA/RRSP tax rules, and investing strategies. Use your full training knowledge to give detailed, specific answers.
+ALWAYS name specific ETF tickers. Never give a vague answer. If asked about any ETF category, list at least 3-5 real ETFs with their tickers, what index they track, approximate MER, and typical yield range. Use real numbers from the database when available; use your training knowledge otherwise.
 
-Database context: Each message includes live data from our platform's ETF database with real MERs, yields, AUM, and prices. Prioritize this data for ETFs we carry. For popular ETFs not in the database, use your training knowledge and note we may not carry them.
-
-Formatting:
+FORMATTING:
 - Plain text only. No markdown, no asterisks, no bold, no # headings.
-- Lead with a short 1-sentence intro, then immediately list specific ETFs with tickers, what they track, MER, and yield.
-- Use numbered lists when listing ETFs.
+- One short intro sentence, then a numbered list of ETFs, then a brief closing explanation.
+- Each ETF entry: "1. TICKER - Name (what it tracks). MER: X%. Yield: ~X%. Suited for: [investor type]."
 
-Boundaries:
-- Describe what each ETF does and what type of investor it suits. Never say "you should buy X" or make a direct personal recommendation.
-- End every response with: This is for informational purposes only and is not financial advice. Please consult a financial advisor."""
+BOUNDARIES:
+- Never say "you should buy X" or make a direct personal recommendation.
+- Always end with: This is for informational purposes only and is not financial advice. Please consult a financial advisor."""
 
 
 def _format_etf_context(etfs: list[dict]) -> str:
@@ -120,44 +122,70 @@ ETF Data:
 
 
 async def _fetch_relevant_etfs(query_text: str, db_fetch) -> list[dict]:
-    """Simple keyword-based ETF lookup from the DB."""
-    # Check for specific tickers mentioned (2-5 uppercase letters)
+    """Intent-aware ETF lookup from the DB."""
     import re
-    tickers = re.findall(r'\b([A-Z]{2,5})\b', query_text.upper())
-
+    q = query_text.lower()
     rows = []
+    existing: set[str] = set()
+
+    def _merge(new_rows):
+        for r in new_rows:
+            if r["ticker"] not in existing:
+                existing.add(r["ticker"])
+                rows.append(r)
+
+    # 1. Specific tickers mentioned by the user
+    tickers = re.findall(r'\b([A-Z]{2,5})\b', query_text.upper())
     if tickers:
-        placeholders = ",".join("?" for _ in tickers[:5])
-        rows = await db_fetch(
-            f"SELECT * FROM etfs WHERE ticker IN ({placeholders}) LIMIT 5",
-            tickers[:5],
-        )
+        placeholders = ",".join("?" for _ in tickers[:6])
+        _merge(await db_fetch(
+            f"SELECT * FROM etfs WHERE ticker IN ({placeholders})",
+            tickers[:6],
+        ))
 
-    # Also do a text search based on keywords
-    keyword_map = {
-        "bond": "Bonds", "fixed income": "Bonds",
-        "dividend": "Income", "income": "Income",
-        "growth": "Growth", "sector": "Sector",
-        "covered call": "Covered Call", "leverage": "Leveraged",
-    }
-    asset_filter = None
-    for kw, val in keyword_map.items():
-        if kw in query_text:
-            asset_filter = val
-            break
+    # 2. Intent-based queries — translate natural language to SQL filters
+    intents = []
 
-    if asset_filter:
-        extra = await db_fetch(
-            "SELECT * FROM etfs WHERE asset_class = ? OR strategy_type = ? OR growth_or_income = ? ORDER BY aum_cad DESC LIMIT 6",
-            [asset_filter, asset_filter, asset_filter],
-        )
-        # Merge without duplicates
-        existing = {r["ticker"] for r in rows}
-        rows += [r for r in extra if r["ticker"] not in existing]
-    elif not rows:
-        # Fallback: top ETFs by AUM
-        rows = await db_fetch(
-            "SELECT * FROM etfs ORDER BY aum_cad DESC LIMIT 8", []
-        )
+    if any(w in q for w in ["low yield", "low distribution", "growth", "growth etf", "simple", "broad market", "index", "safe"]):
+        intents.append(("distribution_yield ASC", "growth_or_income = 'Growth' OR asset_class = 'Stocks'"))
 
-    return rows
+    if any(w in q for w in ["high yield", "income", "dividend", "monthly", "distribution"]):
+        intents.append(("distribution_yield DESC", "distribution_yield > 0"))
+
+    if any(w in q for w in ["bond", "fixed income", "safe", "low risk", "conservative"]):
+        intents.append(("aum_cad DESC", "asset_class = 'Bonds'"))
+
+    if any(w in q for w in ["covered call", "option", "enhanced yield"]):
+        intents.append(("distribution_yield DESC", "is_covered_call = 1"))
+
+    if any(w in q for w in ["leverage", "leveraged", "2x", "3x"]):
+        intents.append(("aum_cad DESC", "is_leveraged = 1"))
+
+    if any(w in q for w in ["sector", "tech", "technology", "health", "energy", "financial"]):
+        intents.append(("aum_cad DESC", "strategy_type = 'Sector'"))
+
+    if any(w in q for w in ["canadian", "canada", "tsx", "canadian market"]):
+        intents.append(("aum_cad DESC", "country = 'CA'"))
+
+    if any(w in q for w in ["us ", "american", "s&p", "nasdaq", "nyse", "united states"]):
+        intents.append(("aum_cad DESC", "country = 'US'"))
+
+    if any(w in q for w in ["cheap", "low mer", "low fee", "low cost", "low expense"]):
+        intents.append(("mer ASC", "mer IS NOT NULL AND mer > 0"))
+
+    if any(w in q for w in ["gold", "commodity", "commodities", "oil", "real estate", "reit"]):
+        intents.append(("aum_cad DESC", "asset_class IN ('Gold', 'Commodities', 'Real Estate')"))
+
+    for order, where in intents:
+        _merge(await db_fetch(
+            f"SELECT * FROM etfs WHERE {where} AND aum_cad IS NOT NULL ORDER BY {order} LIMIT 8",
+            [],
+        ))
+
+    # 3. Fallback: top ETFs by AUM if nothing matched
+    if not rows:
+        _merge(await db_fetch(
+            "SELECT * FROM etfs WHERE aum_cad IS NOT NULL ORDER BY aum_cad DESC LIMIT 12", []
+        ))
+
+    return rows[:15]
