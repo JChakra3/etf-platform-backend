@@ -91,77 +91,70 @@ async def chat(messages: list[dict], db_fetch) -> str:
     return response.text
 
 
+def _mer_label(mer) -> str:
+    if mer is None: return "MER: not available"
+    pct = mer * 100
+    if pct < 0.10: return f"MER: {pct:.3f}% (exceptionally low — one of the cheapest funds available; fees have almost no impact on returns)"
+    if pct < 0.25: return f"MER: {pct:.2f}% (very low — well below the industry average of ~0.5%)"
+    if pct < 0.50: return f"MER: {pct:.2f}% (low cost — below the industry average)"
+    if pct < 0.90: return f"MER: {pct:.2f}% (moderate — near the industry average)"
+    return f"MER: {pct:.2f}% (high — above average; will noticeably drag long-term returns)"
+
+def _yield_label(yld) -> str:
+    if yld is None: return "Distribution yield: not available"
+    pct = yld * 100
+    if pct == 0: return "Distribution yield: 0% (no regular payouts; growth-only fund)"
+    if pct < 1.0: return f"Distribution yield: {pct:.2f}% (very low; this is primarily a growth-focused fund)"
+    if pct < 3.0: return f"Distribution yield: {pct:.2f}% (modest income alongside capital growth)"
+    if pct < 6.0: return f"Distribution yield: {pct:.2f}% (solid income component; attractive for income-focused investors)"
+    return f"Distribution yield: {pct:.2f}% (high yield; primarily an income fund)"
+
+def _aum_label(aum) -> str:
+    if aum is None: return "AUM: not available"
+    if aum > 10_000: return f"AUM: ${aum/1000:.1f}B CAD (very large — excellent liquidity, tight bid-ask spreads)"
+    if aum > 1_000:  return f"AUM: ${aum/1000:.1f}B CAD (large fund — good liquidity)"
+    if aum > 100:    return f"AUM: ${aum:.0f}M CAD (mid-sized — reasonable liquidity)"
+    return f"AUM: ${aum:.0f}M CAD (smaller fund — liquidity may be limited; watch bid-ask spreads)"
+
+
 async def generate_overview(etf: dict) -> str:
     """Generate a data-driven plain-English overview for an ETF detail page."""
-    mer = etf.get('mer')
-    yld = etf.get('distribution_yield')
-    aum = etf.get('aum_cad')
-    risk = etf.get('risk_score')
+    ticker   = etf.get('ticker', '')
+    name     = etf.get('name', '')
+    provider = etf.get('provider', '')
+    asset    = etf.get('asset_class', '')
+    strategy = etf.get('strategy_type', '')
+    geo      = etf.get('geographic_exposure', '')
+    exchange = etf.get('exchange', '')
+    covered  = etf.get('is_covered_call', False)
+    leveraged = etf.get('is_leveraged', False)
+    risk     = etf.get('risk_score')
 
-    # Give context benchmarks so Gemini can make meaningful comparisons
-    mer_context = ""
-    if mer is not None:
-        if mer < 0.001:
-            mer_context = f"MER of {mer*100:.3f}% — exceptionally low, among the cheapest ETFs available, meaning nearly all returns go to the investor"
-        elif mer < 0.005:
-            mer_context = f"MER of {mer*100:.2f}% — very low cost, well below the industry average of ~0.5%"
-        elif mer < 0.01:
-            mer_context = f"MER of {mer*100:.2f}% — low cost, below the industry average"
-        elif mer < 0.02:
-            mer_context = f"MER of {mer*100:.2f}% — moderate cost, near the industry average"
-        else:
-            mer_context = f"MER of {mer*100:.2f}% — above average cost, which will meaningfully drag on long-term returns"
+    flags = []
+    if covered:  flags.append("uses covered call options to generate extra income (which can cap upside)")
+    if leveraged: flags.append("uses leverage — amplifies both gains and losses, higher risk")
 
-    yld_context = ""
-    if yld is not None:
-        if yld == 0:
-            yld_context = "pays no distributions — all returns come from price appreciation"
-        elif yld < 0.01:
-            yld_context = f"very low yield of {yld*100:.2f}% — oriented toward growth rather than income"
-        elif yld < 0.03:
-            yld_context = f"modest yield of {yld*100:.2f}% — a small income component alongside growth"
-        elif yld < 0.06:
-            yld_context = f"solid yield of {yld*100:.2f}% — meaningful income for investors"
-        else:
-            yld_context = f"high yield of {yld*100:.2f}% — primarily an income-focused fund"
+    prompt = f"""You are writing the AI overview card on an ETF research platform. Write exactly 4 sentences in plain, direct English about {ticker} ({name}) for a Canadian retail investor. No bullet points, no markdown, no headers.
 
-    aum_context = ""
-    if aum is not None:
-        if aum > 10000:
-            aum_context = f"${aum/1000:.1f}B CAD AUM — very large, highly liquid fund"
-        elif aum > 1000:
-            aum_context = f"${aum/1000:.1f}B CAD AUM — large, liquid fund"
-        elif aum > 100:
-            aum_context = f"${aum:.0f}M CAD AUM — mid-sized fund with reasonable liquidity"
-        else:
-            aum_context = f"${aum:.0f}M CAD AUM — smaller fund, liquidity may be limited"
+Sentence 1: What this ETF is and what it holds or tracks (use your knowledge of {ticker}).
+Sentence 2: Who this ETF suits and what investing goal it serves.
+Sentence 3: Make a specific observation about the fee using this fact — {_mer_label(etf.get('mer'))}
+Sentence 4: Make a specific observation about the yield and fund size using these facts — {_yield_label(etf.get('distribution_yield'))} | {_aum_label(etf.get('aum_cad'))}
 
-    prompt = f"""Write a 4-5 sentence plain-English overview of this ETF for a retail Canadian investor.
+Additional context (use only if relevant):
+- Provider: {provider}
+- Asset class: {asset}
+- Strategy: {strategy}
+- Geographic exposure: {geo}
+- Exchange: {exchange}
+- Risk score: {risk}/5
+{('- Special notes: ' + '; '.join(flags)) if flags else ''}
 
-Use the data insights below to make specific observations about this ETF — comment on whether the MER is notable, what the yield means for investors, and how the fund size affects liquidity. Be direct and informative, as if a knowledgeable friend is explaining it. Do not use bullet points or markdown. Do not start with the ticker name.
-
-ETF Facts:
-- Ticker: {etf.get('ticker')}
-- Name: {etf.get('name')}
-- Provider: {etf.get('provider')}
-- Asset Class: {etf.get('asset_class')}
-- Strategy: {etf.get('strategy_type')}
-- Geographic Exposure: {etf.get('geographic_exposure')}
-- Exchange: {etf.get('exchange')}
-- Covered Call: {etf.get('is_covered_call')}
-- Leveraged: {etf.get('is_leveraged')}
-- Risk Score: {risk}/5
-- Prior AI Summary: {etf.get('ai_summary')}
-
-Data Insights (use these in your overview):
-- {mer_context or 'MER not available'}
-- {yld_context or 'Yield not available'}
-- {aum_context or 'AUM not available'}
-"""
+Output only the 4 sentences, nothing else. No labels, no intro, no sign-off."""
     response = _CLIENT.models.generate_content(
         model=_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=400),
+        config=types.GenerateContentConfig(temperature=0.2, max_output_tokens=600),
     )
     return response.text.strip()
 
