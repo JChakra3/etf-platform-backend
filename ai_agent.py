@@ -92,31 +92,76 @@ async def chat(messages: list[dict], db_fetch) -> str:
 
 
 async def generate_overview(etf: dict) -> str:
-    """Generate a 2-3 sentence plain-English overview for an ETF detail page."""
-    prompt = f"""Write a 2-3 sentence plain-English overview of this ETF for a retail Canadian investor.
-Focus on: what it holds, who it's best for, and one key strength or risk.
-Do not start with the ticker name. Do not use bullet points.
+    """Generate a data-driven plain-English overview for an ETF detail page."""
+    mer = etf.get('mer')
+    yld = etf.get('distribution_yield')
+    aum = etf.get('aum_cad')
+    risk = etf.get('risk_score')
 
-ETF Data:
+    # Give context benchmarks so Gemini can make meaningful comparisons
+    mer_context = ""
+    if mer is not None:
+        if mer < 0.001:
+            mer_context = f"MER of {mer*100:.3f}% — exceptionally low, among the cheapest ETFs available, meaning nearly all returns go to the investor"
+        elif mer < 0.005:
+            mer_context = f"MER of {mer*100:.2f}% — very low cost, well below the industry average of ~0.5%"
+        elif mer < 0.01:
+            mer_context = f"MER of {mer*100:.2f}% — low cost, below the industry average"
+        elif mer < 0.02:
+            mer_context = f"MER of {mer*100:.2f}% — moderate cost, near the industry average"
+        else:
+            mer_context = f"MER of {mer*100:.2f}% — above average cost, which will meaningfully drag on long-term returns"
+
+    yld_context = ""
+    if yld is not None:
+        if yld == 0:
+            yld_context = "pays no distributions — all returns come from price appreciation"
+        elif yld < 0.01:
+            yld_context = f"very low yield of {yld*100:.2f}% — oriented toward growth rather than income"
+        elif yld < 0.03:
+            yld_context = f"modest yield of {yld*100:.2f}% — a small income component alongside growth"
+        elif yld < 0.06:
+            yld_context = f"solid yield of {yld*100:.2f}% — meaningful income for investors"
+        else:
+            yld_context = f"high yield of {yld*100:.2f}% — primarily an income-focused fund"
+
+    aum_context = ""
+    if aum is not None:
+        if aum > 10000:
+            aum_context = f"${aum/1000:.1f}B CAD AUM — very large, highly liquid fund"
+        elif aum > 1000:
+            aum_context = f"${aum/1000:.1f}B CAD AUM — large, liquid fund"
+        elif aum > 100:
+            aum_context = f"${aum:.0f}M CAD AUM — mid-sized fund with reasonable liquidity"
+        else:
+            aum_context = f"${aum:.0f}M CAD AUM — smaller fund, liquidity may be limited"
+
+    prompt = f"""Write a 4-5 sentence plain-English overview of this ETF for a retail Canadian investor.
+
+Use the data insights below to make specific observations about this ETF — comment on whether the MER is notable, what the yield means for investors, and how the fund size affects liquidity. Be direct and informative, as if a knowledgeable friend is explaining it. Do not use bullet points or markdown. Do not start with the ticker name.
+
+ETF Facts:
 - Ticker: {etf.get('ticker')}
 - Name: {etf.get('name')}
 - Provider: {etf.get('provider')}
 - Asset Class: {etf.get('asset_class')}
 - Strategy: {etf.get('strategy_type')}
-- MER: {etf.get('mer')}%
-- Distribution Yield: {etf.get('distribution_yield')}%
 - Geographic Exposure: {etf.get('geographic_exposure')}
-- AUM: ${etf.get('aum_cad')}M CAD
 - Exchange: {etf.get('exchange')}
 - Covered Call: {etf.get('is_covered_call')}
 - Leveraged: {etf.get('is_leveraged')}
-- Risk Score: {etf.get('risk_score')}/5
-- AI Summary: {etf.get('ai_summary')}
+- Risk Score: {risk}/5
+- Prior AI Summary: {etf.get('ai_summary')}
+
+Data Insights (use these in your overview):
+- {mer_context or 'MER not available'}
+- {yld_context or 'Yield not available'}
+- {aum_context or 'AUM not available'}
 """
     response = _CLIENT.models.generate_content(
         model=_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=200),
+        config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=400),
     )
     return response.text.strip()
 
