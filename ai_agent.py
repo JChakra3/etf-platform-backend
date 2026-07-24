@@ -91,70 +91,80 @@ async def chat(messages: list[dict], db_fetch) -> str:
     return response.text
 
 
-def _mer_label(mer) -> str:
-    if mer is None: return "MER: not available"
+def _mer_sentence(mer) -> str | None:
+    if mer is None: return None
     pct = mer * 100
-    if pct < 0.10: return f"MER: {pct:.3f}% (exceptionally low — one of the cheapest funds available; fees have almost no impact on returns)"
-    if pct < 0.25: return f"MER: {pct:.2f}% (very low — well below the industry average of ~0.5%)"
-    if pct < 0.50: return f"MER: {pct:.2f}% (low cost — below the industry average)"
-    if pct < 0.90: return f"MER: {pct:.2f}% (moderate — near the industry average)"
-    return f"MER: {pct:.2f}% (high — above average; will noticeably drag long-term returns)"
+    if pct < 0.10: return f"Its MER of {pct:.3f}% is exceptionally low, meaning fees take almost nothing from your returns each year."
+    if pct < 0.25: return f"Its MER of {pct:.2f}% is very low, well below the industry average of around 0.5%, keeping more money working for you."
+    if pct < 0.50: return f"Its MER of {pct:.2f}% is below the industry average, making it a cost-efficient option."
+    if pct < 0.90: return f"Its MER of {pct:.2f}% is near the industry average, which is reasonable for the strategy it offers."
+    return f"Its MER of {pct:.2f}% is above average, so investors should weigh the higher cost against the potential benefits of the strategy."
 
-def _yield_label(yld) -> str:
-    if yld is None: return "Distribution yield: not available"
-    pct = yld * 100
-    if pct == 0: return "Distribution yield: 0% (no regular payouts; growth-only fund)"
-    if pct < 1.0: return f"Distribution yield: {pct:.2f}% (very low; this is primarily a growth-focused fund)"
-    if pct < 3.0: return f"Distribution yield: {pct:.2f}% (modest income alongside capital growth)"
-    if pct < 6.0: return f"Distribution yield: {pct:.2f}% (solid income component; attractive for income-focused investors)"
-    return f"Distribution yield: {pct:.2f}% (high yield; primarily an income fund)"
-
-def _aum_label(aum) -> str:
-    if aum is None: return "AUM: not available"
-    if aum > 10_000: return f"AUM: ${aum/1000:.1f}B CAD (very large — excellent liquidity, tight bid-ask spreads)"
-    if aum > 1_000:  return f"AUM: ${aum/1000:.1f}B CAD (large fund — good liquidity)"
-    if aum > 100:    return f"AUM: ${aum:.0f}M CAD (mid-sized — reasonable liquidity)"
-    return f"AUM: ${aum:.0f}M CAD (smaller fund — liquidity may be limited; watch bid-ask spreads)"
+def _yield_sentence(yld, aum) -> str | None:
+    if yld is None and aum is None: return None
+    parts = []
+    if yld is not None:
+        pct = yld * 100
+        if pct == 0:
+            parts.append("It pays no regular distributions, so all returns come from price growth")
+        elif pct < 1.0:
+            parts.append(f"Its distribution yield of {pct:.2f}% is minimal, reflecting its focus on growth over income")
+        elif pct < 3.0:
+            parts.append(f"It offers a modest yield of {pct:.2f}%, providing a small income stream alongside growth")
+        elif pct < 6.0:
+            parts.append(f"Its distribution yield of {pct:.2f}% provides meaningful income, appealing to income-focused investors")
+        else:
+            parts.append(f"Its high distribution yield of {pct:.2f}% makes it primarily an income-generating fund")
+    if aum is not None:
+        if aum > 10_000:
+            parts.append(f"and with over ${aum/1000:.0f}B CAD in assets it is one of the largest and most liquid ETFs available")
+        elif aum > 1_000:
+            parts.append(f"and its ${aum/1000:.1f}B CAD in assets gives it strong liquidity")
+        elif aum > 100:
+            parts.append(f"and its ${aum:.0f}M CAD in assets provides reasonable liquidity for most investors")
+        else:
+            parts.append(f"though its smaller size of ${aum:.0f}M CAD means liquidity may be more limited")
+    return ", ".join(parts) + "." if parts else None
 
 
 async def generate_overview(etf: dict) -> str:
     """Generate a data-driven plain-English overview for an ETF detail page."""
-    ticker   = etf.get('ticker', '')
-    name     = etf.get('name', '')
-    provider = etf.get('provider', '')
-    asset    = etf.get('asset_class', '')
-    strategy = etf.get('strategy_type', '')
-    geo      = etf.get('geographic_exposure', '')
-    exchange = etf.get('exchange', '')
-    covered  = etf.get('is_covered_call', False)
+    ticker    = etf.get('ticker', '')
+    name      = etf.get('name', '')
+    provider  = etf.get('provider', '')
+    asset     = etf.get('asset_class', '')
+    strategy  = etf.get('strategy_type', '')
+    geo       = etf.get('geographic_exposure', '')
+    covered   = etf.get('is_covered_call', False)
     leveraged = etf.get('is_leveraged', False)
-    risk     = etf.get('risk_score')
 
     flags = []
-    if covered:  flags.append("uses covered call options to generate extra income (which can cap upside)")
-    if leveraged: flags.append("uses leverage — amplifies both gains and losses, higher risk")
+    if covered:  flags.append("uses covered call options to boost income, which can limit upside in strong markets")
+    if leveraged: flags.append("uses leverage to amplify returns, which also amplifies losses and increases risk significantly")
 
-    prompt = f"""You are writing the AI overview card on an ETF research platform. Write exactly 4 sentences in plain, direct English about {ticker} ({name}) for a Canadian retail investor. No bullet points, no markdown, no headers.
+    # Pre-build data sentences — skip any where data is missing
+    mer_sentence   = _mer_sentence(etf.get('mer'))
+    yield_sentence = _yield_sentence(etf.get('distribution_yield'), etf.get('aum_cad'))
 
-Sentence 1: What this ETF is and what it holds or tracks (use your knowledge of {ticker}).
-Sentence 2: Who this ETF suits and what investing goal it serves.
-Sentence 3: Make a specific observation about the fee using this fact — {_mer_label(etf.get('mer'))}
-Sentence 4: Make a specific observation about the yield and fund size using these facts — {_yield_label(etf.get('distribution_yield'))} | {_aum_label(etf.get('aum_cad'))}
+    data_lines = []
+    if mer_sentence:   data_lines.append(f"- Fee fact: {mer_sentence}")
+    if yield_sentence: data_lines.append(f"- Yield/size fact: {yield_sentence}")
+    if flags:          data_lines.append(f"- Special note: {'; '.join(flags)}")
+    data_block = "\n".join(data_lines) if data_lines else "- No additional data available"
 
-Additional context (use only if relevant):
-- Provider: {provider}
-- Asset class: {asset}
-- Strategy: {strategy}
-- Geographic exposure: {geo}
-- Exchange: {exchange}
-- Risk score: {risk}/5
-{('- Special notes: ' + '; '.join(flags)) if flags else ''}
+    prompt = f"""Write 3 short, plain English sentences about {ticker} ({name}) for a Canadian retail investor. Use only plain text: no asterisks, no dashes used as bullets, no markdown, no special characters, no em dashes.
 
-Output only the 4 sentences, nothing else. No labels, no intro, no sign-off."""
+Sentence 1: What this ETF tracks or holds and its general strategy. Use your knowledge of {ticker}.
+Sentence 2: What type of investor this suits and why.
+Sentence 3: Use one or two of these pre-written data facts, worked naturally into a sentence:
+{data_block}
+
+Rules: Output only the 3 sentences with no labels, no intro, no sign-off. Each sentence must be complete and end with a period. Keep each sentence under 30 words."""
+
     response = _CLIENT.models.generate_content(
         model=_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.2, max_output_tokens=600),
+        config=types.GenerateContentConfig(temperature=0.1, max_output_tokens=1000),
     )
     return response.text.strip()
 
