@@ -19,6 +19,8 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 from pipeline.screener import get_all_etfs
 from pipeline.extract import scrape_etf
+from pipeline.etf_universe import ETF_UNIVERSE
+from ai_agent import generate_overview
 
 db = None
 
@@ -87,9 +89,8 @@ async def run_pipeline():
     screener_etfs = get_all_etfs()
 
     if not screener_etfs:
-        print("  [WARN] Screener returned 0 results — using existing DB tickers")
-        rows = await db.fetch_all("SELECT ticker, currency FROM etfs", [])
-        screener_etfs = [{"ticker": r["ticker"], "currency": r["currency"]} for r in rows]
+        print("  [WARN] Screener returned 0 results — falling back to static ETF universe")
+        screener_etfs = ETF_UNIVERSE
 
     # ── Step 2: Insert new ETFs ───────────────────────────────────────────────
     print(f"\n  [2/3] Syncing {len(screener_etfs)} ETFs to database...\n")
@@ -169,6 +170,23 @@ async def run_pipeline():
 
         print(f"    price={price}  MER={result.mer}  yield={result.distribution_yield}  "
               f"AUM={aum_cad}M CAD  holdings={len(result.holdings)}")
+
+        # Generate AI overview if not yet created
+        etf_row_full = await db.fetch_one(
+            "SELECT * FROM etfs WHERE ticker = ? COLLATE NOCASE", [ticker]
+        )
+        if etf_row_full and not etf_row_full.get("ai_overview"):
+            try:
+                overview = await generate_overview(dict(etf_row_full))
+                await db.run(
+                    "UPDATE etfs SET ai_overview = ? WHERE ticker = ? COLLATE NOCASE",
+                    [overview, ticker],
+                )
+                print(f"    => Overview generated ({len(overview)} chars)")
+            except Exception as e:
+                print(f"    => Overview failed: {e}")
+            time.sleep(2)
+
         print(f"    => OK\n")
         ok += 1
 
