@@ -94,11 +94,11 @@ async def chat(messages: list[dict], db_fetch) -> str:
 def _mer_sentence(mer) -> str | None:
     if mer is None: return None
     pct = mer * 100
-    if pct < 0.10: return f"Its MER of {pct:.3f}% is exceptionally low, meaning fees take almost nothing from your returns each year."
-    if pct < 0.25: return f"Its MER of {pct:.2f}% is very low, well below the industry average of around 0.5%, keeping more money working for you."
-    if pct < 0.50: return f"Its MER of {pct:.2f}% is below the industry average, making it a cost-efficient option."
-    if pct < 0.90: return f"Its MER of {pct:.2f}% is near the industry average, which is reasonable for the strategy it offers."
-    return f"Its MER of {pct:.2f}% is above average, so investors should weigh the higher cost against the potential benefits of the strategy."
+    if pct < 0.10: return f"Its annual fee is {pct:.3f} percent, which is exceptionally low and means fees take almost nothing from your returns."
+    if pct < 0.25: return f"Its annual fee is {pct:.2f} percent, which is very low and well below the industry average of around 0.5 percent."
+    if pct < 0.50: return f"Its annual fee is {pct:.2f} percent, which is below the industry average and makes it a cost-efficient choice."
+    if pct < 0.90: return f"Its annual fee is {pct:.2f} percent, which is near the industry average and reasonable for the strategy it offers."
+    return f"Its annual fee is {pct:.2f} percent, which is above average, so the higher cost should be weighed against what the fund offers."
 
 def _yield_sentence(yld, aum) -> str | None:
     if yld is None and aum is None: return None
@@ -106,25 +106,34 @@ def _yield_sentence(yld, aum) -> str | None:
     if yld is not None:
         pct = yld * 100
         if pct == 0:
-            parts.append("It pays no regular distributions, so all returns come from price growth")
+            parts.append("It pays no regular distributions so all returns come from price growth")
         elif pct < 1.0:
-            parts.append(f"Its distribution yield of {pct:.2f}% is minimal, reflecting its focus on growth over income")
+            parts.append(f"Its distribution yield is {pct:.2f} percent, which is minimal and reflects a focus on growth over income")
         elif pct < 3.0:
-            parts.append(f"It offers a modest yield of {pct:.2f}%, providing a small income stream alongside growth")
+            parts.append(f"It pays a modest yield of {pct:.2f} percent, offering a small income stream alongside growth")
         elif pct < 6.0:
-            parts.append(f"Its distribution yield of {pct:.2f}% provides meaningful income, appealing to income-focused investors")
+            parts.append(f"Its distribution yield of {pct:.2f} percent provides meaningful income for investors seeking regular payouts")
         else:
-            parts.append(f"Its high distribution yield of {pct:.2f}% makes it primarily an income-generating fund")
+            parts.append(f"Its high distribution yield of {pct:.2f} percent makes it primarily an income-generating fund")
     if aum is not None:
         if aum > 10_000:
-            parts.append(f"and with over ${aum/1000:.0f}B CAD in assets it is one of the largest and most liquid ETFs available")
+            parts.append(f"and with over {aum/1000:.0f} billion CAD in assets it is one of the largest and most liquid ETFs available")
         elif aum > 1_000:
-            parts.append(f"and its ${aum/1000:.1f}B CAD in assets gives it strong liquidity")
+            parts.append(f"and its {aum/1000:.1f} billion CAD in assets gives it strong liquidity")
         elif aum > 100:
-            parts.append(f"and its ${aum:.0f}M CAD in assets provides reasonable liquidity for most investors")
+            parts.append(f"and its {aum:.0f} million CAD in assets provides reasonable liquidity for most investors")
         else:
-            parts.append(f"though its smaller size of ${aum:.0f}M CAD means liquidity may be more limited")
+            parts.append(f"though its smaller size of {aum:.0f} million CAD means liquidity may be more limited")
     return ", ".join(parts) + "." if parts else None
+
+
+def _clean_overview(text: str) -> str:
+    """Strip any lines that look like leaked prompt instructions."""
+    bad_keywords = ["sentence", "plain text", "no markdown", "rule:", "fact:", "output only",
+                    "no bullet", "no asterisk", "no special", "no label", "sign-off", "intro"]
+    lines = text.strip().splitlines()
+    clean = [l for l in lines if not any(kw in l.lower() for kw in bad_keywords)]
+    return " ".join(l.strip() for l in clean if l.strip())
 
 
 async def generate_overview(etf: dict) -> str:
@@ -152,21 +161,20 @@ async def generate_overview(etf: dict) -> str:
     if flags:          data_lines.append(f"- Special note: {'; '.join(flags)}")
     data_block = "\n".join(data_lines) if data_lines else "- No additional data available"
 
-    prompt = f"""Write 3 short, plain English sentences about {ticker} ({name}) for a Canadian retail investor. Use only plain text: no asterisks, no dashes used as bullets, no markdown, no special characters, no em dashes.
+    prompt = f"""Write 3 complete sentences about {ticker} ({name}) for a Canadian retail investor. Plain text only, no symbols or formatting.
 
-Sentence 1: What this ETF tracks or holds and its general strategy. Use your knowledge of {ticker}.
-Sentence 2: What type of investor this suits and why.
-Sentence 3: Use one or two of these pre-written data facts, worked naturally into a sentence:
-{data_block}
+1. What {ticker} tracks or holds and its investment strategy.
+2. What type of investor it suits and what goal it serves.
+3. Work these facts naturally into one sentence: {data_block}
 
-Rules: Output only the 3 sentences with no labels, no intro, no sign-off. Each sentence must be complete and end with a period. Keep each sentence under 30 words."""
+Return only the 3 sentences. Each must end with a period."""
 
     response = _CLIENT.models.generate_content(
         model=_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.1, max_output_tokens=1000),
     )
-    return response.text.strip()
+    return _clean_overview(response.text)
 
 
 async def _fetch_relevant_etfs(query_text: str, db_fetch) -> list[dict]:
