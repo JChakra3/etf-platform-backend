@@ -177,6 +177,57 @@ async def search_etfs(
     )
 
 
+# ── Search Suggestions ───────────────────────────────────────────────────────
+
+_KEYWORD_SUGGESTIONS = [
+    "nasdaq", "nyse", "tsx", "high yield", "low yield", "covered call",
+    "leveraged", "bonds", "gold", "silver", "commodities", "dividend",
+    "all-in-one", "balanced", "low fee", "cheap", "canadian", "us stocks",
+    "emerging markets", "sector", "tech", "technology", "energy", "healthcare",
+    "financials", "real estate", "reit", "savings", "hisa", "hedged",
+    "growth", "income", "index", "passive", "sp500", "monthly income",
+    "conservative", "aggressive", "international", "global",
+]
+
+@app.get("/search/suggest")
+async def search_suggest(q: str = Query("")):
+    term = q.strip()
+    if len(term) < 2:
+        return {"suggestions": []}
+
+    term_lower = term.lower()
+    suggestions: list[dict] = []
+    seen: set[str] = set()
+
+    # 1. Ticker prefix match (highest priority — feels instant)
+    ticker_rows = await fetch_all(
+        "SELECT ticker, name FROM etfs WHERE ticker LIKE ? COLLATE NOCASE ORDER BY aum_cad DESC NULLS LAST LIMIT 5",
+        [f"{term.upper()}%"],
+    )
+    for r in ticker_rows:
+        suggestions.append({"type": "ticker", "value": r["ticker"], "label": f"{r['ticker']} — {r['name']}"})
+        seen.add(r["ticker"])
+
+    # 2. Name contains match
+    name_rows = await fetch_all(
+        "SELECT ticker, name FROM etfs WHERE name LIKE ? ORDER BY aum_cad DESC NULLS LAST LIMIT 5",
+        [f"%{term}%"],
+    )
+    for r in name_rows:
+        if r["ticker"] not in seen and len(suggestions) < 6:
+            suggestions.append({"type": "ticker", "value": r["ticker"], "label": f"{r['ticker']} — {r['name']}"})
+            seen.add(r["ticker"])
+
+    # 3. Keyword suggestions (prefix or contains)
+    for kw in _KEYWORD_SUGGESTIONS:
+        if len(suggestions) >= 8:
+            break
+        if kw.startswith(term_lower) or (len(term_lower) >= 3 and term_lower in kw):
+            suggestions.append({"type": "keyword", "value": kw, "label": kw.title()})
+
+    return {"suggestions": suggestions[:8]}
+
+
 # ── ETF Detail ───────────────────────────────────────────────────────────────
 
 @app.get("/etfs/{ticker}", response_model=ETFDetail)
