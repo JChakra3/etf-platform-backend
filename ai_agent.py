@@ -264,42 +264,144 @@ def generate_search_tags(etf: dict) -> str:
     # ── Theme detection from fund name / sector_focus ─────────────────────────
     combined = name + " " + sector
     theme_map = [
-        (["nasdaq", "nasdaq-100"],                               ["nasdaq", "tech"]),
-        (["s&p 500", "sp500", "s&p500", "s & p 500"],           ["sp500", "s&p 500", "index"]),
-        (["technology", "tech", "semiconductor", "innovation"],  ["tech", "technology", "sector"]),
-        (["health", "biotech", "pharma", "medical"],             ["healthcare", "health", "sector"]),
+        # Indexes / benchmarks
+        (["nasdaq", "nasdaq-100"],                               ["nasdaq", "nasdaq-100", "tech"]),
+        (["s&p 500", "sp500", "s&p500", "s & p 500"],           ["sp500", "s&p 500", "index", "large cap"]),
+        (["dow jones", "djia"],                                  ["dow jones", "blue chip", "large cap"]),
+        (["russell 2000", "russell2000"],                        ["russell 2000", "small cap"]),
+        (["ftse"],                                               ["ftse", "international"]),
+        (["msci"],                                               ["msci", "international"]),
+        (["tsx composite", "tsx 60", "s&p/tsx"],                 ["tsx composite", "tsx 60", "canadian"]),
+        (["wilshire"],                                           ["total market", "index"]),
+        # Sectors
+        (["technology", "tech", "innovation"],                   ["tech", "technology", "sector"]),
+        (["semiconductor", "chip"],                              ["semiconductors", "tech", "sector"]),
+        (["cloud", "software"],                                  ["cloud", "tech", "sector"]),
+        (["artificial intelligence", "ai "],                     ["artificial intelligence", "ai", "tech", "sector"]),
+        (["clean energy", "renewable", "solar", "wind"],         ["clean energy", "solar", "renewable", "sector"]),
+        (["electric vehicle", "ev "],                            ["electric vehicles", "ev", "sector"]),
+        (["cannabis", "marijuana"],                              ["cannabis", "sector"]),
+        (["health", "biotech", "pharma", "medical"],             ["healthcare", "biotech", "health", "sector"]),
         (["energy", "oil", "gas", "petroleum"],                  ["energy", "oil", "sector"]),
         (["financial", "bank", "banking"],                       ["financials", "banks", "sector"]),
         (["utility", "utilities"],                               ["utilities", "sector"]),
         (["real estate", "reit", "property"],                    ["real estate", "reit", "sector"]),
-        (["consumer staples", "staples"],                        ["consumer staples", "sector"]),
+        (["consumer staples", "staples"],                        ["consumer staples", "defensive", "sector"]),
         (["consumer discretionary", "discretionary"],            ["consumer discretionary", "sector"]),
         (["industrial"],                                         ["industrials", "sector"]),
-        (["material", "metal", "mining"],                        ["materials", "sector"]),
-        (["gold", "bullion"],                                    ["gold", "commodities"]),
-        (["silver"],                                             ["silver", "commodities"]),
-        (["dividend", "yield"],                                  ["dividend", "income"]),
+        (["material", "metal", "mining"],                        ["materials", "mining", "sector"]),
+        (["aerospace", "defence", "defense"],                    ["aerospace", "defence", "sector"]),
+        (["water", "infrastructure"],                            ["infrastructure", "sector"]),
+        (["communication", "telecom", "media"],                  ["communications", "telecom", "sector"]),
+        # Commodities
+        (["gold", "bullion"],                                    ["gold", "commodities", "precious metals"]),
+        (["silver"],                                             ["silver", "commodities", "precious metals"]),
+        (["commodity", "commodities", "oil", "natural resource"], ["commodities", "natural resources"]),
+        # Geography
         (["emerging", "developing"],                             ["emerging markets", "international"]),
-        (["international", "global", "world"],                   ["international", "global"]),
-        (["europe", "european"],                                  ["europe", "international"]),
-        (["asia", "pacific"],                                    ["asia", "international"]),
-        (["savings", "hisa", "cash", "high interest"],           ["savings", "hisa", "cash", "safe"]),
+        (["international", "global", "world", "all world"],      ["international", "global"]),
+        (["europe", "european"],                                 ["europe", "international"]),
+        (["asia", "pacific", "apac"],                            ["asia", "international"]),
+        (["japan", "japanese"],                                  ["japan", "asia", "international"]),
+        (["china", "chinese"],                                   ["china", "asia", "emerging markets"]),
+        (["india", "indian"],                                    ["india", "asia", "emerging markets"]),
+        (["latin america"],                                      ["latin america", "emerging markets"]),
+        (["developed market"],                                   ["developed markets", "international"]),
+        # Income / payout
+        (["dividend", "yield"],                                  ["dividend", "income"]),
+        (["monthly"],                                            ["monthly dividend", "monthly income", "income"]),
+        (["quarterly"],                                          ["quarterly dividend", "income"]),
+        (["distribution", "cash flow"],                          ["distribution", "income", "cash flow"]),
+        (["passive income"],                                     ["passive income", "income"]),
+        # Style / strategy
+        (["value", "value fund"],                                ["value", "value stocks"]),
+        (["growth stock", "growth fund"],                        ["growth stocks", "growth"]),
+        (["momentum"],                                           ["momentum", "factor"]),
+        (["small cap", "small-cap"],                             ["small cap", "small-cap"]),
+        (["mid cap", "mid-cap"],                                 ["mid cap", "mid-cap"]),
+        (["large cap", "large-cap", "blue chip"],                ["large cap", "blue chip"]),
+        (["equal weight", "equal-weight"],                       ["equal weight"]),
+        (["esg", "socially responsible", "sustainable", "responsible investing"], ["esg", "sustainable", "socially responsible"]),
+        (["low volatility", "minimum volatility", "min vol"],    ["low volatility", "defensive", "conservative"]),
+        (["defensive"],                                          ["defensive", "conservative"]),
+        (["safe haven"],                                         ["safe haven", "conservative", "safe"]),
+        (["factor", "smart beta"],                               ["factor", "smart beta"]),
+        # Bonds (more granular)
+        (["treasury", "government bond", "govt bond"],           ["treasury", "government bond", "bonds", "safe"]),
+        (["corporate bond"],                                     ["corporate bond", "bonds"]),
+        (["aggregate bond", "total bond"],                       ["aggregate bond", "total bond", "bonds"]),
+        (["short term", "short-term bond"],                      ["short term", "bonds"]),
+        (["long term", "long-term bond"],                        ["long term", "bonds"]),
+        (["ultra short"],                                        ["ultra short", "bonds", "safe"]),
+        (["high yield bond", "junk bond"],                       ["high yield bond", "junk bond", "bonds"]),
+        (["investment grade"],                                   ["investment grade", "bonds"]),
+        # Providers
+        (["vanguard"],                                           ["vanguard"]),
+        (["blackrock", "ishares", "i shares"],                   ["blackrock", "ishares"]),
+        (["bmo"],                                                ["bmo"]),
+        (["horizons", "hxt", "hxs"],                            ["horizons"]),
+        (["mackenzie"],                                          ["mackenzie"]),
+        (["fidelity"],                                           ["fidelity"]),
+        (["invesco"],                                            ["invesco"]),
+        (["spdr", "state street"],                               ["spdr", "state street"]),
+        (["ark ", "ark invest"],                                 ["ark", "innovation", "growth"]),
+        (["ci financial", "ci etf"],                             ["ci"]),
+        # Savings / cash
+        (["savings", "hisa", "high interest", "cash"],           ["savings", "hisa", "cash", "safe"]),
+        # Account types
         (["tfsa"],                                               ["tfsa"]),
         (["rrsp"],                                               ["rrsp"]),
-        (["covered call", "covered-call"],                       ["covered call", "income"]),
-        (["all-in-one", "balanced", "all in one"],               ["all-in-one", "balanced", "diversified"]),
+        (["fhsa"],                                               ["fhsa"]),
+        (["resp"],                                               ["resp"]),
+        # Investor profile
+        (["beginner", "starter", "simple", "easy"],              ["beginner", "simple", "starter"]),
+        (["retirement", "pension"],                              ["retirement", "long term"]),
+        (["total market", "broad market"],                       ["total market", "broad market", "index", "passive"]),
+        # Covered call / all-in-one
+        (["covered call", "covered-call"],                       ["covered call", "income", "options"]),
+        (["all-in-one", "all in one", "balanced"],               ["all-in-one", "balanced", "diversified"]),
     ]
     for keywords, add_tags in theme_map:
         if any(kw in combined for kw in keywords):
             tags.update(add_tags)
 
-    # ── Known all-in-one tickers ──────────────────────────────────────────────
+    # ── Known tickers — extra tags not derivable from name alone ─────────────
     if ticker in {"XEQT","VEQT","XGRO","VGRO","XBAL","VBAL","XCNS","VCONS","ZGRO","ZBAL"}:
-        tags.update(["all-in-one", "balanced", "diversified", "passive"])
-
-    # ── Known NASDAQ-tracking tickers ─────────────────────────────────────────
+        tags.update(["all-in-one", "balanced", "diversified", "passive", "beginner"])
     if ticker in {"QQQ","TQQQ","QYLD","XYLD","JEPQ"}:
         tags.update(["nasdaq", "nasdaq-100", "tech"])
+    if ticker in {"VTI","VOO","SPY","IVV","SCHB","ITOT","VFV","ZSP","XSP","VSP","HXS"}:
+        tags.update(["total market", "broad market", "index", "passive", "beginner", "sp500"])
+    if ticker in {"ARKK"}:
+        tags.update(["ark", "innovation", "growth", "aggressive", "speculative"])
+    if ticker in {"GLD","IAU","CGL","MNT","HUG"}:
+        tags.update(["gold", "precious metals", "commodities", "safe haven"])
+    if ticker in {"SLV","SVR"}:
+        tags.update(["silver", "precious metals", "commodities"])
+    if ticker in {"HYG","JNK","HYI","HYLD"}:
+        tags.update(["high yield bond", "junk bond", "bonds", "income"])
+    if ticker in {"TLT","VGLT"}:
+        tags.update(["long term", "treasury", "government bond", "bonds"])
+    if ticker in {"SHY","BSV","VSB","XSB","ZSB"}:
+        tags.update(["short term", "ultra short", "bonds", "safe"])
+    if ticker in {"CASH","CSAV","HSAV"}:
+        tags.update(["savings", "hisa", "cash", "safe", "ultra short"])
+    if ticker in {"XIU","XIC","VCN","ZCN","HXT"}:
+        tags.update(["tsx composite", "tsx 60", "canadian", "broad market"])
+    if ticker in {"SCHD","VYM","DVY","XEI","VDY","CDZ","XDV","ZDV"}:
+        tags.update(["dividend", "income", "dividend growth"])
+    if ticker in {"XLK","VGT","XIT"}:
+        tags.update(["tech", "technology", "semiconductors", "sector"])
+    if ticker in {"XLV","VHT"}:
+        tags.update(["healthcare", "biotech", "sector"])
+    if ticker in {"XLE","VDE","XEG"}:
+        tags.update(["energy", "oil", "sector"])
+    if ticker in {"XLF","VFH","XFN","ZEB"}:
+        tags.update(["financials", "banks", "sector"])
+    if ticker in {"VNQ","XLRE","XRE","ZRE"}:
+        tags.update(["real estate", "reit", "sector"])
+    if ticker in {"SOXL","TECL","TQQQ","UPRO","SPXL"}:
+        tags.update(["leveraged", "3x", "aggressive", "speculative", "high risk"])
 
     return ",".join(sorted(tags))
 

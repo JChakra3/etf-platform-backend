@@ -180,13 +180,45 @@ async def search_etfs(
 # ── Search Suggestions ───────────────────────────────────────────────────────
 
 _KEYWORD_SUGGESTIONS = [
-    "nasdaq", "nyse", "tsx", "high yield", "low yield", "covered call",
-    "leveraged", "bonds", "gold", "silver", "commodities", "dividend",
-    "all-in-one", "balanced", "low fee", "cheap", "canadian", "us stocks",
-    "emerging markets", "sector", "tech", "technology", "energy", "healthcare",
-    "financials", "real estate", "reit", "savings", "hisa", "hedged",
-    "growth", "income", "index", "passive", "sp500", "monthly income",
-    "conservative", "aggressive", "international", "global",
+    # Exchange
+    "nasdaq", "nasdaq-100", "nyse", "tsx", "tsx composite", "tsx 60",
+    # Geography
+    "canadian", "us stocks", "american", "international", "global",
+    "emerging markets", "developed markets", "europe", "asia", "japan",
+    "china", "india", "latin america",
+    # Asset class / strategy
+    "bonds", "fixed income", "treasury", "government bond", "corporate bond",
+    "aggregate bond", "short term", "long term", "high yield bond",
+    "investment grade", "gold", "silver", "commodities", "real estate", "reit",
+    "savings", "hisa", "cash",
+    # Yield / income
+    "high yield", "low yield", "dividend", "monthly dividend", "monthly income",
+    "quarterly dividend", "passive income", "income", "distribution", "cash flow",
+    # Strategy / style
+    "covered call", "leveraged", "hedged", "cad hedged", "index", "passive",
+    "all-in-one", "balanced", "diversified", "value", "growth stocks", "momentum",
+    "small cap", "mid cap", "large cap", "blue chip", "equal weight",
+    "esg", "socially responsible", "sustainable", "low volatility", "defensive",
+    "safe haven", "factor", "smart beta", "sector",
+    # Cost
+    "low fee", "cheap", "low mer", "low cost",
+    # Sectors
+    "tech", "technology", "semiconductors", "cloud", "artificial intelligence",
+    "clean energy", "solar", "electric vehicles", "cannabis", "healthcare",
+    "biotech", "energy", "oil", "financials", "banks", "utilities",
+    "consumer staples", "consumer discretionary", "industrials", "materials",
+    "mining", "aerospace", "defence", "water", "infrastructure", "communications",
+    # Indexes
+    "s&p 500", "dow jones", "russell 2000", "msci", "ftse", "wilshire",
+    "total market", "broad market",
+    # Providers
+    "vanguard", "ishares", "blackrock", "bmo", "horizons", "mackenzie",
+    "fidelity", "invesco", "spdr", "ark",
+    # Account types
+    "tfsa", "rrsp", "fhsa", "resp",
+    # Risk / profile
+    "conservative", "aggressive", "speculative", "safe", "low risk", "high risk",
+    "beginner", "retirement", "long term", "starter",
 ]
 
 @app.get("/search/suggest")
