@@ -20,7 +20,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 from pipeline.screener import get_all_etfs
 from pipeline.extract import scrape_etf
 from pipeline.etf_universe import ETF_UNIVERSE
-from ai_agent import generate_overview
+from ai_agent import generate_overview, generate_search_tags
 
 db = None
 
@@ -79,6 +79,12 @@ async def run_pipeline():
 
     now   = datetime.now(UTC).isoformat()
     as_of = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    # Ensure search_keywords column exists
+    try:
+        await db.run("ALTER TABLE etfs ADD COLUMN search_keywords TEXT", [])
+    except Exception:
+        pass  # column already exists
 
     print(f"\n{'='*60}")
     print(f"  ETF Scrape Pipeline  —  {now[:19]}Z")
@@ -171,21 +177,33 @@ async def run_pipeline():
         print(f"    price={price}  MER={result.mer}  yield={result.distribution_yield}  "
               f"AUM={aum_cad}M CAD  holdings={len(result.holdings)}")
 
-        # Generate AI overview if not yet created
+        # Generate AI overview + search tags
         etf_row_full = await db.fetch_one(
             "SELECT * FROM etfs WHERE ticker = ? COLLATE NOCASE", [ticker]
         )
-        if etf_row_full and not etf_row_full.get("ai_overview"):
-            try:
-                overview = await generate_overview(dict(etf_row_full))
-                await db.run(
-                    "UPDATE etfs SET ai_overview = ? WHERE ticker = ? COLLATE NOCASE",
-                    [overview, ticker],
-                )
-                print(f"    => Overview generated ({len(overview)} chars)")
-            except Exception as e:
-                print(f"    => Overview failed: {e}")
-            time.sleep(2)
+        if etf_row_full:
+            etf_dict = dict(etf_row_full)
+
+            # Search tags (pure logic, no Gemini)
+            tags = generate_search_tags(etf_dict)
+            await db.run(
+                "UPDATE etfs SET search_keywords = ? WHERE ticker = ? COLLATE NOCASE",
+                [tags, ticker],
+            )
+            print(f"    => Tags: {tags[:80]}{'...' if len(tags) > 80 else ''}")
+
+            # AI overview (cached — only generate if missing)
+            if not etf_dict.get("ai_overview"):
+                try:
+                    overview = await generate_overview(etf_dict)
+                    await db.run(
+                        "UPDATE etfs SET ai_overview = ? WHERE ticker = ? COLLATE NOCASE",
+                        [overview, ticker],
+                    )
+                    print(f"    => Overview generated ({len(overview)} chars)")
+                except Exception as e:
+                    print(f"    => Overview failed: {e}")
+                time.sleep(2)
 
         print(f"    => OK\n")
         ok += 1

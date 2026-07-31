@@ -177,6 +177,133 @@ Return only the 3 sentences. Each must end with a period."""
     return _clean_overview(response.text)
 
 
+def generate_search_tags(etf: dict) -> str:
+    """Generate comma-separated search tags from ETF data (no Gemini — pure logic)."""
+    tags: set[str] = set()
+
+    ticker   = (etf.get("ticker")         or "").upper()
+    name     = (etf.get("name")           or "").lower()
+    country  = (etf.get("country")        or "").upper()
+    currency = (etf.get("currency")       or "").upper()
+    exchange = (etf.get("exchange")       or "").upper()
+    asset    = (etf.get("asset_class")    or "").lower()
+    strategy = (etf.get("strategy_type")  or "").lower()
+    sector   = (etf.get("sector_focus")   or "").lower()
+    goi      = (etf.get("growth_or_income") or "").lower()
+
+    # ── Exchange ──────────────────────────────────────────────────────────────
+    if "NASDAQ" in exchange or "NASDAQ" in name.upper():
+        tags.update(["nasdaq", "nasdaq-100"])
+    if "NYSE" in exchange:
+        tags.add("nyse")
+    if "TSX" in exchange or "TO" in exchange or country == "CA":
+        tags.update(["tsx", "toronto stock exchange"])
+
+    # ── Country / Currency ────────────────────────────────────────────────────
+    if country == "CA":
+        tags.update(["canada", "canadian", "cad"])
+    elif country == "US":
+        tags.update(["us", "american", "united states", "usa"])
+    if currency == "CAD":
+        tags.add("cad")
+    if currency == "USD":
+        tags.add("usd")
+
+    # ── Asset class ───────────────────────────────────────────────────────────
+    if any(w in asset for w in ["bond", "fixed"]):
+        tags.update(["bonds", "bond", "fixed income", "fixed-income", "safe", "conservative"])
+    if any(w in asset for w in ["stock", "equit"]):
+        tags.update(["stocks", "equities", "equity"])
+    if "gold" in asset:
+        tags.update(["gold", "commodity", "commodities", "precious metals"])
+    if "real estate" in asset or "reit" in asset:
+        tags.update(["real estate", "reit", "property"])
+    if "commodit" in asset:
+        tags.update(["commodity", "commodities"])
+
+    # ── Strategy flags ────────────────────────────────────────────────────────
+    if etf.get("is_covered_call"):
+        tags.update(["covered call", "covered-call", "options", "enhanced yield", "income", "monthly income"])
+    if etf.get("is_leveraged"):
+        tags.update(["leveraged", "2x", "3x", "aggressive", "high risk"])
+    if etf.get("is_hedged"):
+        tags.update(["hedged", "cad hedged", "currency hedged"])
+    if "sector" in strategy:
+        tags.add("sector")
+    if "index" in strategy or "passive" in strategy:
+        tags.update(["index", "passive"])
+
+    # ── Yield profile ─────────────────────────────────────────────────────────
+    yld = etf.get("distribution_yield")
+    if yld is not None:
+        pct = yld * 100
+        if pct >= 5:
+            tags.update(["high yield", "income", "dividend", "monthly income"])
+        elif pct >= 2:
+            tags.update(["dividend", "income", "moderate yield"])
+        elif 0 < pct < 1:
+            tags.update(["low yield", "growth"])
+        elif pct == 0:
+            tags.update(["low yield", "growth", "no dividend"])
+
+    # ── MER / cost ────────────────────────────────────────────────────────────
+    mer = etf.get("mer")
+    if mer is not None:
+        pct = mer * 100
+        if pct < 0.20:
+            tags.update(["cheap", "low fee", "low mer", "low cost", "low expense"])
+        elif pct > 0.80:
+            tags.add("expensive")
+
+    # ── Growth or income label ────────────────────────────────────────────────
+    if "growth" in goi:
+        tags.add("growth")
+    if "income" in goi:
+        tags.add("income")
+
+    # ── Theme detection from fund name / sector_focus ─────────────────────────
+    combined = name + " " + sector
+    theme_map = [
+        (["nasdaq", "nasdaq-100"],                               ["nasdaq", "tech"]),
+        (["s&p 500", "sp500", "s&p500", "s & p 500"],           ["sp500", "s&p 500", "index"]),
+        (["technology", "tech", "semiconductor", "innovation"],  ["tech", "technology", "sector"]),
+        (["health", "biotech", "pharma", "medical"],             ["healthcare", "health", "sector"]),
+        (["energy", "oil", "gas", "petroleum"],                  ["energy", "oil", "sector"]),
+        (["financial", "bank", "banking"],                       ["financials", "banks", "sector"]),
+        (["utility", "utilities"],                               ["utilities", "sector"]),
+        (["real estate", "reit", "property"],                    ["real estate", "reit", "sector"]),
+        (["consumer staples", "staples"],                        ["consumer staples", "sector"]),
+        (["consumer discretionary", "discretionary"],            ["consumer discretionary", "sector"]),
+        (["industrial"],                                         ["industrials", "sector"]),
+        (["material", "metal", "mining"],                        ["materials", "sector"]),
+        (["gold", "bullion"],                                    ["gold", "commodities"]),
+        (["silver"],                                             ["silver", "commodities"]),
+        (["dividend", "yield"],                                  ["dividend", "income"]),
+        (["emerging", "developing"],                             ["emerging markets", "international"]),
+        (["international", "global", "world"],                   ["international", "global"]),
+        (["europe", "european"],                                  ["europe", "international"]),
+        (["asia", "pacific"],                                    ["asia", "international"]),
+        (["savings", "hisa", "cash", "high interest"],           ["savings", "hisa", "cash", "safe"]),
+        (["tfsa"],                                               ["tfsa"]),
+        (["rrsp"],                                               ["rrsp"]),
+        (["covered call", "covered-call"],                       ["covered call", "income"]),
+        (["all-in-one", "balanced", "all in one"],               ["all-in-one", "balanced", "diversified"]),
+    ]
+    for keywords, add_tags in theme_map:
+        if any(kw in combined for kw in keywords):
+            tags.update(add_tags)
+
+    # ── Known all-in-one tickers ──────────────────────────────────────────────
+    if ticker in {"XEQT","VEQT","XGRO","VGRO","XBAL","VBAL","XCNS","VCONS","ZGRO","ZBAL"}:
+        tags.update(["all-in-one", "balanced", "diversified", "passive"])
+
+    # ── Known NASDAQ-tracking tickers ─────────────────────────────────────────
+    if ticker in {"QQQ","TQQQ","QYLD","XYLD","JEPQ"}:
+        tags.update(["nasdaq", "nasdaq-100", "tech"])
+
+    return ",".join(sorted(tags))
+
+
 async def _fetch_relevant_etfs(query_text: str, db_fetch) -> list[dict]:
     """Intent-aware ETF lookup from the DB."""
     import re
