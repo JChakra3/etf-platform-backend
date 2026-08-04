@@ -144,6 +144,8 @@ async def run_pipeline():
             updates.append("price = ?");              params.append(price)
         if meta.get("volume") is not None:
             updates.append("volume = ?");             params.append(meta["volume"])
+        if result.exchange:
+            updates.append("exchange = ?");           params.append(result.exchange)
 
         params.append(ticker)
 

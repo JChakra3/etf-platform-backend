@@ -61,6 +61,7 @@ Extract the fields and return ONLY a single JSON object with exactly these keys:
   "management_fee": <float or null>,
   "aum_millions": <float or null>,
   "price": <float or null>,
+  "exchange": <string or null>,
   "holdings": [
     {{
       "holding_ticker": <string or null>,
@@ -77,6 +78,7 @@ Rules:
 - AUM in MILLIONS of native currency: $1.4B -> 1400.0, $560M -> 560.0, $1.4T -> 1400000.0
 - Holdings weight_pct must be decimal: 7.1% -> 0.071
 - price is the current market price per share/unit in native currency (e.g. 123.45)
+- exchange: look for the exchange name near the ticker symbol at the top of the page. Return exactly one of: "NYSE Arca", "NASDAQ", "Toronto", "CBOE", "NEO", "Cboe CA" — or null if not found
 - Return null for any field not found - never guess or invent data
 - Return up to 10 holdings ordered by weight descending
 - Return empty list [] for holdings if no holdings table found

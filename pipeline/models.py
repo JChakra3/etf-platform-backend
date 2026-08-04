@@ -49,6 +49,14 @@ class ScrapedETF(BaseModel):
         default=None,
         description="Current market price per unit/share in native currency. Return null if not found.",
     )
+    exchange: str | None = Field(
+        default=None,
+        description=(
+            "Stock exchange where the ETF trades. "
+            "Return the exact name as shown on the page: 'NYSE Arca', 'NASDAQ', 'Toronto', 'CBOE', 'NEO', 'Cboe CA'. "
+            "Return null if not found."
+        ),
+    )
     holdings: list[ScrapedHolding] = Field(
         default_factory=list,
         description=(
